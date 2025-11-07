@@ -38,6 +38,7 @@ pip install -e .
 
 To reproduce the baseline YAQA factors, run:
 
+```
 CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --standalone --nproc-per-node=4 \
   hessian_llama/get_hess_llama.py \
   --save_path <PATH_TO_SAVE> \
@@ -47,35 +48,37 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --standalone --nproc-per-node=4 \
   --power_iters 4 \
   --ctx_size 4096 \
   --n_seqs 4096
+```
 
 ## 2. Hessians with FastKron
 
 FastKron replaces power-iteration with a Lanczos-based estimator.
 
-## 2a. Collect calibration minibatches
+### 2a. Collect calibration minibatches
 
-
+```
 python kronfwsvd/collect_fisher_weights.py \
   --model_name <ORIG_MODEL_PATH> \
   --path_to <PATH_TO_SAVE> \
   --size 1 \
   --lr 1e-4
+```
   
-## 2b. Run FastKron factor estimation
-
+### 2b. Run FastKron factor estimation
+```
 python kronfwsvd/get_kron_factors_llama.py \
 --model_name <ORIG_MODEL_PATH> \
-
+```
 
 ## 3. Quantization and Evaluation
 
 Quantize the model with QTIP and evaluate downstream tasks:
-
+```
 ./run_quantizer.sh \
   <ORIG_MODEL_PATH> \
   <PATH_TO_HESSIANS> \
   <TOKENIZER_PATH>
-
+```
 
 
 
