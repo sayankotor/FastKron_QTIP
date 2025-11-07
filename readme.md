@@ -32,6 +32,7 @@ Install the required [QTIP framework](https://github.com/Cornell-RelaxML/qtip/tr
 git clone [https://github.com/Cornell-RelaxML/qtip.git](https://github.com/Cornell-RelaxML/qtip.git)
 cd qtip
 pip install -e .
+```
 
 ## 1. Hessians with Sketch A (YAQA baseline)
 
