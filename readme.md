@@ -1,4 +1,4 @@
-# FastKron + YAQA Quantization: High-Speed LLM Compression
+# FastKron: Fast and Accurate Fisher-Guided Quantization
 
 This repository contains scripts for reproducing our experiments on **post-training quantization (PTQ)** of LLaMA and Qwen models using:
 
