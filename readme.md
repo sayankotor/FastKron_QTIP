@@ -1,4 +1,4 @@
-# ⚡️ FastKron + YAQA Quantization: High-Speed LLM Compression
+# FastKron + YAQA Quantization: High-Speed LLM Compression
 
 This repository contains scripts for reproducing our experiments on **post-training quantization (PTQ)** of LLaMA and Qwen models using:
 
@@ -9,7 +9,7 @@ We follow the YAQA pipeline with QTIP quantization and replace the Kronecker-fac
 
 ---
 
-## 📚 Publication and Methodology
+## Publication and Methodology
 
 Detailed methodology, implementation, and experimental results are presented in our paper:
 
@@ -18,12 +18,66 @@ Approximation.], ACL'2026 Main
 > V. Chekalina, T.Gerasin. M.Kurkin, A.Kuznetsov, E.Frolov*
 
 ---
-## Checkpoints are available on Hf🤗 
-### To validate it, please do the following:
+
+# Inference
+
+Checkpoints are available on Hf🤗 : [FastKron Hugging Face Collection](https://huggingface.co/collections/timo13113/test-collection)
+## Installation process
+### Essential libraries
+```
+pip install -r requirements.txt
+```
+the inference pipeline was additionally tested on transformers==4.57.1 and torch==2.5.1+cu124, other versions may work but are not guaranteed
+### Install `fast_hadamard_transform`
+```
+git clone https://github.com/Dao-AILab/fast-hadamard-transform.git fast-hadamard-transform
+cd fast-hadamard-transform
+pip install -v .
+```
+### Install the `qtip-kernels` submodule
+```
+cd qtip-kernels
+python setup.py install
+```
+
+Important: for the kernels to work, they need to be compiled for specific matrix sizes and codebook settings. 
+Otherwise, you may get an error like `AttributeError: '_OpNamespace' 'quip_lib' object has no attribute 'decompress_matvec_qtip_4096_1_12288_2'. Did you mean: 'decompress_matvec_qtip_4096_1_4096_2'?`
+For example, the model you want to run may not have the appropriate precompiled dimentions (4096x12288 in the error above). In that case:
+- navigate to `qtip-kernels/src`
+- add the kernels to be compiled to `wrapper.cpp` and `qtip_torch.cu` in the same notation as all the others in the same file, and add the dimentions of your kernels to the `kernels` array in `/lib/codebook/__init__.py` file
+- reinstall the library
 
 
+## Example
 
-## If you want to quantize from scratch:
+Below is an inference example for Qwen3 quantized model.
+
+```
+from transformers import AutoTokenizer, AutoConfig
+from model.qwen import Qwen3ForCausalLM # from FastKron package
+from tqdm import tqdm
+
+path = '/path/to/qwen3_kronfwsvd_2048_qw_2bit_hf'
+device = 'cuda:0'
+
+model = Qwen3ForCausalLM.from_pretrained(path, config = AutoConfig.from_pretrained(path)).to(device)
+tokenizer = AutoTokenizer.from_pretrained(path, trust_remote_code=True)
+
+prompt = 'What is 2+2?'
+prompt = tokenizer.apply_chat_template([
+    {'role': 'system', 'content': 'You are a helpful assistant.'},
+    {'role': 'user', 'content': prompt},
+], tokenize=False)
+
+print('prompt:', prompt)
+for _ in tqdm(range(1)):
+    res = model.generate(
+        tokenizer.encode(prompt, return_tensors='pt').to(model.device)
+    )
+print('result:', tokenizer.batch_decode(res.cpu()))
+```
+
+# Quantization from scratch:
 
 ### 0. Installation
 
