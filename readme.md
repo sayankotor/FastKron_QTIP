@@ -17,12 +17,13 @@ Detailed methodology, implementation, and experimental results are presented in 
 Approximation.]
 > *V. Chekalina, T.Gerasin. M.Kurkin, A.Kuznetsov, E.Frolov*
 
-
-### 💡 Core Methodology
-
-We utilize the **Kronecker-factored approximation of the Hessian** to parametrize second-order information about the loss landscape. The resulting information is then used in **structural pruning** to compress Large Language Models (LLMs). This dramatically speeds up the compression process compared to traditional, full-Hessian methods.
-
 ---
+### Checkpoints are available on Hf🤗 
+## To validate it, please do the following:
+
+
+
+### If you want to quantize from scratch:
 
 ## 0. Installation
 
