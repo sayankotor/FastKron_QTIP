@@ -13,19 +13,19 @@ We follow the YAQA pipeline with QTIP quantization and replace the Kronecker-fac
 
 Detailed methodology, implementation, and experimental results are presented in our paper:
 
-> **[Fast and Accurate Fisher-Guided Quantization via Efficient Kronecker Factor
-Approximation.]
-> *V. Chekalina, T.Gerasin. M.Kurkin, A.Kuznetsov, E.Frolov*
+> [Fast and Accurate Fisher-Guided Quantization via Efficient Kronecker Factor
+Approximation.], ACL'2026 Main
+> V. Chekalina, T.Gerasin. M.Kurkin, A.Kuznetsov, E.Frolov*
 
 ---
-### Checkpoints are available on Hf🤗 
-## To validate it, please do the following:
+## Checkpoints are available on Hf🤗 
+### To validate it, please do the following:
 
 
 
-### If you want to quantize from scratch:
+## If you want to quantize from scratch:
 
-## 0. Installation
+### 0. Installation
 
 Install the required [QTIP framework](https://github.com/Cornell-RelaxML/qtip/tree/main):
 
@@ -35,7 +35,7 @@ cd qtip
 pip install -e .
 ```
 
-## 1. Hessians with Sketch A (YAQA baseline)
+### 1. Hessians with Sketch A (YAQA baseline)
 
 To reproduce the baseline YAQA factors, run:
 
@@ -51,11 +51,11 @@ CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --standalone --nproc-per-node=4 \
   --n_seqs 4096
 ```
 
-## 2. Hessians with FastKron
+### 2. Hessians with FastKron
 
 FastKron replaces power-iteration with a Lanczos-based estimator.
 
-### 2a. Collect calibration minibatches
+#### 2a. Collect calibration minibatches
 
 ```
 python kronfwsvd/collect_fisher_weights.py \
@@ -65,13 +65,13 @@ python kronfwsvd/collect_fisher_weights.py \
   --lr 1e-4
 ```
   
-### 2b. Run FastKron factor estimation
+#### 2b. Run FastKron factor estimation
 ```
 python kronfwsvd/get_kron_factors_llama.py \
 --model_name <ORIG_MODEL_PATH> \
 ```
 
-## 3. Quantization and Evaluation
+#### 3. Quantization and Evaluation
 
 Quantize the model with QTIP and evaluate downstream tasks:
 ```
