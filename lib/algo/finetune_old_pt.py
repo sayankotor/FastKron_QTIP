@@ -22,8 +22,6 @@ from transformers import AutoModelForCausalLM
 from lib import codebook, utils
 from lib.linear import QuantizedLinear
 
-from safetensors.torch import safe_open
-
 from . import ldlq
 
 
@@ -139,8 +137,6 @@ def quantize_finetune_decoder_layer(mixed_layer, quant_order, idx, cb, args,
     has_kernel = utils.has_kernel(args.decode_mode, args.L, args.K, args.V,
                                   args.tlut_bits, args.td_x, args.td_y)
 
-    print ("quant_order",quant_order)
-
     for quant_i, attr in enumerate(quant_order):
         (linear_attr, name, in_hess_name, out_hess_name, rcp, skip_ft,
          one_sided_override) = attr
@@ -156,24 +152,43 @@ def quantize_finetune_decoder_layer(mixed_layer, quant_order, idx, cb, args,
         SV = (torch.randn(m, device=device).sign() +
               1e-5).sign().to(dtype_).to(device)
 
-        if "gate" in name or "down" in name or "up" in name:
-            submodule = "mlp"
-        elif "q" in name or "k" in name or "v" in name or "o" in name:
-            submodule = "self_attn"
-        else:
-            raise ValueError(f"Cannot determine submodule (mlp or attn) from name: {name}")
+        try:
+
+            in_hess_path = f'{args.hess_path}/{idx}_{in_hess_name}_hin.pt'
+            out_hess_path = f'{args.hess_path}/{idx}_{out_hess_name}_hout.pt'
+    
+            print (in_hess_path, out_hess_path)
+    
+            
+            H_data = torch.load(in_hess_path,
+                                map_location=torch.device('cpu')).to(device)
+            Hin = utils.flat_to_sym(H_data, n).to(torch.float64)
+            Hin /= torch.diag(Hin).mean()
+            H_data = torch.load(out_hess_path,
+                                map_location=torch.device('cpu')).to(device)
+            Hout = utils.flat_to_sym(H_data, m).to(torch.float64)
+            Hout /= torch.diag(Hout).mean()
+
+        except:
+
+            print (submodule)
+            file_path = os.path.join(args.hess_path, f"model_layers_{idx}_{submodule}_{name}_proj.safetensors")
+    
+            with safe_open(file_path, framework="pt", device="cpu") as f:
+                Hin = f.get_tensor("YF").to(device).to(torch.float64)
+                Hout = f.get_tensor("XF").to(device).to(torch.float64)
+    
+            print ("hin", flush = True)
+            Hin /= torch.diag(Hin).mean()
+            Hout /= torch.diag(Hout).mean()
         
-        # Build the correct file path
-        print (submodule)
-        file_path = os.path.join(args.hess_path, f"model_layers_{idx}_{submodule}_{name}_proj.safetensors")
-
-        with safe_open(file_path, framework="pt", device="cpu") as f:
-            Hin = f.get_tensor("YF").to(device).to(torch.float64)
-            Hout = f.get_tensor("XF").to(device).to(torch.float64)
-
-        print ("hin", flush = True)
-        Hin /= torch.diag(Hin).mean()
-        Hout /= torch.diag(Hout).mean()
+        #Hin = torch.eye(n, dtype=torch.float64, device=device)
+        
+        #Hin /= torch.diag(Hin).mean()
+        #Hout = torch.eye(m, dtype=torch.float64, device=device)
+        #Hout /= torch.diag(Hout).mean()
+        #print (Hin.shape, Hout.shape, Hin[:3, :3], Hout[:3, :3], Hin.dtype, Hout.dtype)
+        #del H_data
 
         Hin = utils.matmul_hadUt(utils.matmul_hadUt(Hin * SU).T * SU).T
         Lin = None
@@ -183,16 +198,25 @@ def quantize_finetune_decoder_layer(mixed_layer, quant_order, idx, cb, args,
             fsr += args.sigma_reg
             Lin = utils.block_LDL(Hin, args.td_y)
         print('Final Sigma Reg Hin', fsr)
-        Lin = Lin[0].float()
-        Lin[torch.arange(n), torch.arange(n)] = 0
+        try:
+            Lin = Lin[0].float()
+            Lin[torch.arange(n), torch.arange(n)] = 0
+    
+            Hout = utils.matmul_hadUt(utils.matmul_hadUt(Hout * SV).T * SV).T
+            Lout = None
+            fsr = 0
+            while Lout is None:
+                Hout[torch.arange(m), torch.arange(m)] += args.sigma_reg
+                fsr += args.sigma_reg
+                Lout = utils.block_LDL(Hout, args.td_x)
+        except Exception as e:
+            import traceback
+            print(f"[ERROR] Failed during LDL factorization for layer {idx}_{name}")
+            print("Exception:", e)
+            traceback.print_exc()
+            raise  # optional: re-raise if you want to halt the process
 
-        Hout = utils.matmul_hadUt(utils.matmul_hadUt(Hout * SV).T * SV).T
-        Lout = None
-        fsr = 0
-        while Lout is None:
-            Hout[torch.arange(m), torch.arange(m)] += args.sigma_reg
-            fsr += args.sigma_reg
-            Lout = utils.block_LDL(Hout, args.td_x)
+            
         print('Final Sigma Reg Hout', fsr)
         Lout = Lout[0].float()
         Lout[torch.arange(m), torch.arange(m)] = 0
@@ -200,12 +224,16 @@ def quantize_finetune_decoder_layer(mixed_layer, quant_order, idx, cb, args,
         Hin = Hin.float()
         Hout = Hout.float()
 
+        print ("!", Hin.shape, Hout.shape)
+
         Wr = utils.matmul_hadUt(utils.matmul_hadUt(W.T.to(device) * SV).T * SU)
 
         Wscale = Wr.square().mean().sqrt() / (
             cb.lut.to(torch.float64).square().mean().sqrt().float() *
             args.scale_override)
         Wr /= Wscale
+
+        print ("1")
 
         hatWr, Qidxs = ldlq.LDLQ_2hess(Wr,
                                        Lin,
@@ -216,6 +244,8 @@ def quantize_finetune_decoder_layer(mixed_layer, quant_order, idx, cb, args,
                                        cb,
                                        for_kernel=has_kernel)
         utils.clean()
+
+        print ("2", flush = True)
 
         Qidxs = Qidxs.cpu()
         packed = cb.pack_trellis(
@@ -239,7 +269,7 @@ def quantize_finetune_decoder_layer(mixed_layer, quant_order, idx, cb, args,
         W = W.to(device)
         err_num = torch.trace((Wr - hatWr) @ Hin @ (Wr - hatWr).T @ Hout)
         err = err_num / torch.trace(Wr @ Hin @ Wr.T @ Hout)
-        print(f'{idx}_{name} 2 sided proxy err {err.item()}', err_num)
+        print(f'{idx}_{name} 2 sided proxy err {err.item()}', err_num, flush = True)
 
         err_num_1 = torch.trace((Wr - hatWr) @ Hin @ (Wr - hatWr).T)
         denom_1 = torch.trace(Wr @ Hin @ Wr.T)

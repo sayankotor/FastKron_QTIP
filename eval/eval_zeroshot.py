@@ -2,6 +2,7 @@ import argparse
 import json
 import os
 import random
+from datetime import datetime, timezone
 
 import datasets
 import glog
@@ -29,13 +30,18 @@ parser.add_argument('--hf_path', default='hfized/quantized_hada_70b', type=str)
 parser.add_argument('--tokenizer', default=None, type=str)
 parser.add_argument('--batch_size', type=int, default=1, help='batch size')
 parser.add_argument("--tasks", type=str)
-parser.add_argument("--output_path", default=None, type=str)
-parser.add_argument('--num_fewshot', type=int, default=0)
+parser.add_argument("--output_path", default=None, type=str,
+                    help='Optional path for torch.save of full lm_eval results (.pt)')
+parser.add_argument('--num_fewshot', type=int, default=0,
+                    help="N-shot count override; pass -1 to use each task's YAML "
+                         "default (e.g. gsm8k=5, ifeval=0)")
 parser.add_argument('--limit', type=int, default=None)
 parser.add_argument('--apply_chat_template', action='store_true')
 parser.add_argument('--fewshot_as_multiturn', action='store_true')
 parser.add_argument('--manifest_model', action='store_true')
 parser.add_argument('--max_mem_ratio', type=float, default=0.7)
+parser.add_argument('--output_json', type=str, default=None,
+                    help='Atomic JSON dump of results plus provenance metadata')
 
 
 def main(args):
@@ -64,19 +70,13 @@ def main(args):
                          tokenizer=tokenizer,
                          batch_size=args.batch_size)
 
-
-    # Construct TaskManager and configure per-task splits
-    task_names = args.tasks.split(",")
-
-    lm_eval_model = HFLM(model,
-                         tokenizer=tokenizer,
-                         batch_size=args.batch_size)
+    fewshot_arg = None if args.num_fewshot < 0 else args.num_fewshot
 
     results = evaluator.simple_evaluate(
         model=lm_eval_model,
         tasks=task_names,
         limit=args.limit,
-        num_fewshot=args.num_fewshot,
+        num_fewshot=fewshot_arg,
         apply_chat_template=args.apply_chat_template,
         fewshot_as_multiturn=args.fewshot_as_multiturn,
     )
@@ -89,6 +89,35 @@ def main(args):
 
     if args.output_path is not None:
         torch.save(results, args.output_path)
+
+    if args.output_json is not None:
+        summary = {
+            "_meta": {
+                "hf_path": args.hf_path,
+                "tokenizer": args.tokenizer,
+                "tasks": task_names,
+                "num_fewshot": args.num_fewshot,
+                "num_fewshot_resolved": fewshot_arg,
+                "apply_chat_template": args.apply_chat_template,
+                "fewshot_as_multiturn": args.fewshot_as_multiturn,
+                "manifest_model": args.manifest_model,
+                "batch_size": args.batch_size,
+                "max_mem_ratio": args.max_mem_ratio,
+                "seed": args.seed,
+                "limit": args.limit,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+            "results": results.get("results", {}),
+            "configs": results.get("configs", {}),
+            "versions": results.get("versions", {}),
+            "n-samples": results.get("n-samples", {}),
+        }
+        text = json.dumps(summary, indent=2, default=str)
+        tmp = args.output_json + ".tmp"
+        with open(tmp, "w") as f:
+            f.write(text)
+        os.replace(tmp, args.output_json)
+        glog.info(f'wrote results JSON to {args.output_json}')
 
 
 if __name__ == '__main__':
