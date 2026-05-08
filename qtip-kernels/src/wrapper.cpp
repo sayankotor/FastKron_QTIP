@@ -22,6 +22,48 @@ void decompress_matvec_16_9_4_1_5120_1_5120(
 					  torch::Tensor &out
 					  );
 
+void decompress_matvec_16_9_2_1_27648_1_5120(
+                                          torch::Tensor &compressed,
+                                          torch::Tensor &codebook,
+                                          torch::Tensor &x,
+                                          torch::Tensor &out
+                                          );
+
+void decompress_matvec_16_9_3_1_27648_1_5120(
+                                          torch::Tensor &compressed,
+                                          torch::Tensor &codebook,
+                                          torch::Tensor &x,
+                                          torch::Tensor &out
+                                          );
+
+void decompress_matvec_16_9_4_1_27648_1_5120(
+                                          torch::Tensor &compressed,
+                                          torch::Tensor &codebook,
+                                          torch::Tensor &x,
+                                          torch::Tensor &out
+                                          );
+
+void decompress_matvec_16_9_2_1_5120_1_27648(
+                                          torch::Tensor &compressed,
+                                          torch::Tensor &codebook,
+                                          torch::Tensor &x,
+                                          torch::Tensor &out
+                                          );
+
+void decompress_matvec_16_9_3_1_5120_1_27648(
+                                          torch::Tensor &compressed,
+                                          torch::Tensor &codebook,
+                                          torch::Tensor &x,
+                                          torch::Tensor &out
+                                          );
+
+void decompress_matvec_16_9_4_1_5120_1_27648(
+                                          torch::Tensor &compressed,
+                                          torch::Tensor &codebook,
+                                          torch::Tensor &x,
+                                          torch::Tensor &out
+                                          );
+
 void decompress_matvec_16_9_2_1_1024_1_5120(
 					  torch::Tensor &compressed,
 					  torch::Tensor &codebook,
@@ -713,4 +755,10 @@ PYBIND11_MODULE(TORCH_EXTENSION_NAME, m) {
   m.def("decompress_matvec_16_9_4_1_8192_1_28672", &decompress_matvec_16_9_4_1_8192_1_28672, "decompress_matvec_16_9_4_1_8192_1_28672");
   m.def("decompress_matvec_16_9_4_1_28672_1_8192", &decompress_matvec_16_9_4_1_28672_1_8192, "decompress_matvec_16_9_4_1_28672_1_8192");
   m.def("decompress_matvec_16_9_4_1_1024_1_8192", &decompress_matvec_16_9_4_1_1024_1_8192, "decompress_matvec_16_9_4_1_1024_1_8192");
+  m.def("decompress_matvec_16_9_2_1_27648_1_5120", &decompress_matvec_16_9_2_1_27648_1_5120, "decompress_matvec_16_9_2_1_27648_1_5120");
+  m.def("decompress_matvec_16_9_3_1_27648_1_5120", &decompress_matvec_16_9_3_1_27648_1_5120, "decompress_matvec_16_9_3_1_27648_1_5120");
+  m.def("decompress_matvec_16_9_4_1_27648_1_5120", &decompress_matvec_16_9_4_1_27648_1_5120, "decompress_matvec_16_9_4_1_27648_1_5120");
+  m.def("decompress_matvec_16_9_2_1_5120_1_27648", &decompress_matvec_16_9_2_1_5120_1_27648, "decompress_matvec_16_9_2_1_5120_1_27648");
+  m.def("decompress_matvec_16_9_3_1_5120_1_27648", &decompress_matvec_16_9_3_1_5120_1_27648, "decompress_matvec_16_9_3_1_5120_1_27648");
+  m.def("decompress_matvec_16_9_4_1_5120_1_27648", &decompress_matvec_16_9_4_1_5120_1_27648, "decompress_matvec_16_9_4_1_5120_1_27648");
 }
