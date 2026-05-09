@@ -25,6 +25,8 @@ parser.add_argument('--tokenizer', default=None, type=str)
 parser.add_argument('--seqlen', default=4096, type=int)
 parser.add_argument('--manifest', action='store_true')
 parser.add_argument('--max_mem_ratio', default=0.7, type=float)
+parser.add_argument('--output_json', type=str, default=None,
+                    help='Atomic JSON dump of {dataset}_ppl per dataset')
 
 
 
@@ -40,7 +42,7 @@ def main(args):
             if isinstance(module, QuantizedLinear):
                 module.mode = 'train-fixW'
 
-
+    results = {}
     for dataset in datasets:
         input_tok = gptq_data_utils.get_test_tokens(
             dataset,
@@ -73,6 +75,28 @@ def main(args):
 
         ppl = torch.exp(torch.tensor(avg_loss)).item()
         glog.info(f'{dataset} perplexity: {ppl}')
+        results[f"{dataset}_ppl"] = ppl
+
+    if args.output_json is not None:
+        from datetime import datetime, timezone
+        summary = {
+            "_meta": {
+                "hf_path": args.hf_path,
+                "tokenizer": args.tokenizer,
+                "seqlen": args.seqlen,
+                "manifest": args.manifest,
+                "max_mem_ratio": args.max_mem_ratio,
+                "seed": args.seed,
+                "timestamp": datetime.now(timezone.utc).isoformat(),
+            },
+            "results": results,
+        }
+        text = json.dumps(summary, indent=2, default=str)
+        tmp = args.output_json + ".tmp"
+        with open(tmp, "w") as f:
+            f.write(text)
+        os.replace(tmp, args.output_json)
+        glog.info(f'wrote PPL JSON to {args.output_json}')
 
 
 if __name__ == '__main__':

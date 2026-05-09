@@ -37,11 +37,12 @@ ATTN_IMPL="${ATTN_IMPL:-flash_attention_2}"
 TOP_K="${TOP_K:-2}"
 GRAD_CHUNK_SIZE="${GRAD_CHUNK_SIZE:-4}"
 NUM_DEVICES="${NUM_DEVICES:-1}"
+COLLECT_SCRIPT="${COLLECT_SCRIPT:-collect_fisher_weights.py}"
 EXPECTED_STEPS="${EXPECTED_STEPS:-$(( DATASET_SIZE / (PER_DEVICE_BATCH_SIZE * GRAD_ACCUM) ))}"
 
 # ---------- repo paths ----------
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-COLLECT_PY="${REPO_ROOT}/kronfwsvd/collect_fisher_weights.py"
+COLLECT_PY="${REPO_ROOT}/kronfwsvd/${COLLECT_SCRIPT}"
 KRON_PY="${REPO_ROOT}/kronfwsvd/get_kron_factors_llama.py"
 
 # ---------- ERR trap (CHUNK_IDX set in main loop) ----------
@@ -67,6 +68,7 @@ Optional env (with defaults):
   DATASET_SIZE=${DATASET_SIZE}    GRAD_ACCUM=${GRAD_ACCUM}
   PER_DEVICE_BATCH_SIZE=${PER_DEVICE_BATCH_SIZE}     MAX_LENGTH=${MAX_LENGTH}    LR=${LR}
   ATTN_IMPL=${ATTN_IMPL}
+  COLLECT_SCRIPT=${COLLECT_SCRIPT}    (resolves to ${COLLECT_PY})
   TOP_K=${TOP_K}     GRAD_CHUNK_SIZE=${GRAD_CHUNK_SIZE}    NUM_DEVICES=${NUM_DEVICES}
 
 CLI:
@@ -325,7 +327,7 @@ process_chunk() {
 # ---------- main ----------
 log "starting | WORK_DIR=${WORK_DIR} model=${MODEL_NAME} num_layers=${NUM_LAYERS} chunk_size=${CHUNK_SIZE} total_chunks=${TOTAL_CHUNKS}"
 log "config  | dataset=${DATASET_PATH} (size=${DATASET_SIZE}) batch=${PER_DEVICE_BATCH_SIZE} grad_accum=${GRAD_ACCUM} expected_steps=${EXPECTED_STEPS}"
-log "config  | top_k=${TOP_K} grad_chunk_size=${GRAD_CHUNK_SIZE} num_devices=${NUM_DEVICES} attn_impl=${ATTN_IMPL}"
+log "config  | top_k=${TOP_K} grad_chunk_size=${GRAD_CHUNK_SIZE} num_devices=${NUM_DEVICES} attn_impl=${ATTN_IMPL} collect_script=${COLLECT_SCRIPT}"
 [[ -n "$DRY_RUN" ]] && log "DRY-RUN mode: no commands will be executed"
 [[ -n "$START_CHUNK" ]] && log "CLI: --start-chunk ${START_CHUNK}"
 [[ -n "$ONLY_CHUNK" ]] && log "CLI: --only-chunk ${ONLY_CHUNK}"
