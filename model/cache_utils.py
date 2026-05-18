@@ -329,6 +329,14 @@ class StaticCacheConfig(CacheConfig):
 
 
 class DynamicCache(Cache):
+    def get_mask_sizes(self, cache_position, layer_idx):
+        # Returns (kv_length, kv_offset) for full attention.
+        # kv_length = number of keys/values seen so far (current position + 1).
+        # kv_offset = 0 for non-sliding attention.
+        kv_length = int(cache_position[-1].item()) + 1
+        kv_offset = 0
+        return kv_length, kv_offset
+
     """
     A cache that grows dynamically as more tokens are generated. This is the default for generative models.
 

@@ -9,8 +9,15 @@ import transformers
 
 from model.llama import LlamaForCausalLM
 from model.qwen import Qwen3ForCausalLM
+from model.qwen2 import Qwen2ForCausalLM
 #from model.llama4 import Llama4ForCausalLM
 #from model.llama4_orig import Llama4ForCausalLM as Llama4ForCausalLMOrig
+
+# Path to the Qwen3 config.pt workaround (AutoConfig doesn't preserve
+# _name_or_path correctly on Qwen3 quantized checkpoints). Override via:
+#   export FASTKRON_QWEN3_CONFIG_PATH=/abs/path/to/config.pt
+_DEFAULT_QWEN3_CFG = "../yaqa-quantization/qwen3_sketchA_2048_qw_2_vika/config.pt"
+QWEN3_CONFIG_PATH = os.environ.get("FASTKRON_QWEN3_CONFIG_PATH", _DEFAULT_QWEN3_CFG)
 
 def _normalize_config(cfg):
     # --- гарантируем наличие quip_params ---
@@ -41,9 +48,10 @@ def _normalize_config(cfg):
 
 def model_from_hf_path(path, max_mem_ratio=0.7, device_map=None):
 
-    # AutoConfig fails to read name_or_path correctly
+    # AutoConfig fails to read name_or_path correctly on Qwen3 quantized
+    # checkpoints, so load the saved config dict via QWEN3_CONFIG_PATH.
     if 'qwen3' in path:
-        bad_config = torch.load('../yaqa-quantization/qwen3_sketchA_2048_qw_2_vika/config.pt', weights_only=False)
+        bad_config = torch.load(QWEN3_CONFIG_PATH, weights_only=False)
         model_config = bad_config['model_config']
         is_quantized = hasattr(model_config, 'quip_params')
         model_type = model_config.model_type
@@ -67,6 +75,9 @@ def model_from_hf_path(path, max_mem_ratio=0.7, device_map=None):
             model_str = "Qwen3ForCausalLM"#transformers.Qwen3Config.from_pretrained(
                 #path)._name_or_path
             model_cls = Qwen3ForCausalLM
+        elif model_type.startswith('qwen2'):
+            model_str = "Qwen2ForCausalLM"
+            model_cls = Qwen2ForCausalLM
         else:
             raise Exception
     else:
@@ -84,12 +95,13 @@ def model_from_hf_path(path, max_mem_ratio=0.7, device_map=None):
             i: f"{torch.cuda.mem_get_info(i)[1]*max_mem_ratio/(1 << 30)}GiB"
             for i in range(torch.cuda.device_count())
         }
-        if model_type.startswith('qwen3'):
-            model = model_cls.from_pretrained(path,
-                                                  torch_dtype='auto',
-                                                  low_cpu_mem_usage=True,
-                                                  trust_remote_code=True,
-                                                  config=model_config)
+        if model_type.startswith('qwen3') or model_type.startswith('qwen2'):
+            kw = dict(torch_dtype='auto',
+                      low_cpu_mem_usage=True,
+                      trust_remote_code=True)
+            if model_type.startswith('qwen3'):
+                kw['config'] = model_config
+            model = model_cls.from_pretrained(path, **kw)
             print ("loadad qwen!")
         else:
             model = model_cls.from_pretrained(path,
@@ -102,13 +114,14 @@ def model_from_hf_path(path, max_mem_ratio=0.7, device_map=None):
                 'LlamaDecoderLayer', 'Llama4TextDecoderLayer'
             ],
             max_memory=mmap)
-    if model_type.startswith('qwen3'):
-        model = model_cls.from_pretrained(path,
-                                              torch_dtype='auto',
-                                              low_cpu_mem_usage=True,
-                                              trust_remote_code=True,
-                                              config=model_config,
-                                              device_map=device_map)
+    if model_type.startswith('qwen3') or model_type.startswith('qwen2'):
+        kw = dict(torch_dtype='auto',
+                  low_cpu_mem_usage=True,
+                  trust_remote_code=True,
+                  device_map=device_map)
+        if model_type.startswith('qwen3'):
+            kw['config'] = model_config
+        model = model_cls.from_pretrained(path, **kw)
         print ("loadad qwen!")
 
     else:
