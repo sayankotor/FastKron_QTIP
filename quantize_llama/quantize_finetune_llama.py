@@ -6,7 +6,9 @@ import glog
 
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:512'
 import sys
-sys.path.append("../yaqa-quantization")
+_FASTKRON_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _FASTKRON_ROOT not in sys.path:
+    sys.path.insert(0, _FASTKRON_ROOT)
 
 from operator import attrgetter
 

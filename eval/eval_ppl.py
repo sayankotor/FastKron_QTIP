@@ -10,7 +10,9 @@ import torch
 from tqdm import tqdm
 
 import sys
-sys.path.append("../yaqa-quantization")
+_FASTKRON_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _FASTKRON_ROOT not in sys.path:
+    sys.path.insert(0, _FASTKRON_ROOT)
 
 from lib.linear import QuantizedLinear
 from lib.utils import gptq_data_utils

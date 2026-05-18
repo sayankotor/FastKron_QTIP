@@ -9,7 +9,9 @@ from transformers import LlamaForCausalLM as OrigLlama
 
 
 import sys
-sys.path.append("../yaqa-quantization")
+_FASTKRON_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _FASTKRON_ROOT not in sys.path:
+    sys.path.insert(0, _FASTKRON_ROOT)
 
 from lib import codebook, utils
 from lib.utils.unsafe_import import model_from_hf_path

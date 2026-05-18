@@ -11,13 +11,15 @@ from lm_eval import evaluator
 from lm_eval.tasks import TaskManager
 from lm_eval.models.huggingface import HFLM
 #from lm_eval.tasks import TaskManager
-from transformers import AutoTokenizer
+from transformers import AutoModelForCausalLM, AutoTokenizer
 
 
 os.environ['PYTORCH_CUDA_ALLOC_CONF'] = 'max_split_size_mb:512'
 
 import sys
-sys.path.append("../yaqa-quantization")
+_FASTKRON_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _FASTKRON_ROOT not in sys.path:
+    sys.path.insert(0, _FASTKRON_ROOT)
 sys.path.insert(0, "../lm-evaluation-harness")
 
 from lib.linear import QuantizedLinear
@@ -45,9 +47,18 @@ parser.add_argument('--output_json', type=str, default=None,
 
 
 def main(args):
-    model, model_str = model_from_hf_path(args.hf_path,
+    if args.manifest_model:
+        model, model_str = model_from_hf_path(args.hf_path,
                                           max_mem_ratio=args.max_mem_ratio,
                                           device_map='balanced')
+
+    else:
+        model = AutoModelForCausalLM.from_pretrained(
+        args.hf_path,
+        torch_dtype=torch.float16,
+        device_map="auto",
+        low_cpu_mem_usage=True
+        )
 
     #model_str = "unsloth/llama-2-7b"
 
@@ -79,6 +90,7 @@ def main(args):
         num_fewshot=fewshot_arg,
         apply_chat_template=args.apply_chat_template,
         fewshot_as_multiturn=args.fewshot_as_multiturn,
+        gen_kwargs="max_gen_toks=640",
     )
     for key in results['results']:
         print(key)

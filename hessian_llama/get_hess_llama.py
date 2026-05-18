@@ -3,10 +3,10 @@ import os
 os.environ["PYTORCH_CUDA_ALLOC_CONF"] = "max_split_size_mb:512"
 
 import sys
-sys.path.append("../yaqa-quantization")
-
-import sys
-sys.path.append(os.path.dirname(__file__))  # or parent dir if needed
+_FASTKRON_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+if _FASTKRON_ROOT not in sys.path:
+    sys.path.insert(0, _FASTKRON_ROOT)
+sys.path.append(os.path.dirname(__file__))  # local custom_linear_A/B etc.
 
 import os
 
