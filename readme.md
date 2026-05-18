@@ -136,8 +136,63 @@ Quantize the model with QTIP and evaluate downstream tasks:
 ```
 
 
+#### 4. Quantizing a large model
 
-## 📊 Zero-shot results — LLaMA-3 8B
+If you need to quantize a large model, switch to the `quantize_big_model` branch.
+It implements chunked quantization: the model is split into blocks, and for each
+selected block the calibration and Kronecker-factor computation runs while the
+others stay idle. This prevents excessive memory usage (at the cost of being
+slower).
+
+We recommend this option for models larger than 10B parameters. 
+
+
+#### 5. How to add a kernel for a layer with an unseen shape
+
+For kernel-level details and how to measure speed see
+[README_KERNELS.md](README_KERNELS.md).
+
+## 📊 Zero-shot results — Qwen-2.5 32B PTQ no fine-tuning
+
+### Perplexity
+
+| | wikitext2 ↓ | c4 ↓ |
+|---|---|---|
+| Baseline (BF16) | 4.6701 | 8.5833 |
+| 4-bit FastKron | 4.7944 | 8.6555 |
+| 2-bit FastKron | 6.2502 | 9.7388 |
+
+### Zero-shot tasks
+
+| | arc_c ↑ | arc_e ↑ | boolq ↑ | hellaswag ↑ | piqa ↑ | winogrande ↑ | AVG ↑ |
+|---|---|---|---|---|---|---|---|
+| Baseline (BF16) | 0.5307 | 0.8085 | 0.8713 | 0.6498 | 0.8199 | 0.7522 | **0.7387** |
+| 4-bit FastKron | 0.5205 | 0.7950 | 0.8722 | 0.6482 | 0.8166 | 0.7545 | **0.7345** |
+| 2-bit FastKron | 0.4633 | 0.7837 | 0.8700 | 0.6052 | 0.8003 | 0.7443 | **0.7111** |
+
+### GSM8K & IFEval
+
+| | gsm8k ↑ | ifeval ↑ |
+|---|---|---|
+| Baseline (BF16) | 0.8294 | 0.3660 |
+| 4-bit FastKron | 0.8673 | 0.3641 |
+| 2-bit FastKron | 0.7953 | 0.3401 |
+
+### Model size
+
+| | Disk size | Compression |
+|---|---|---|
+| Baseline (BF16) | 64 GB | 1× |
+| 4-bit FastKron | 17 GB | 3.8× |
+| 2-bit FastKron | 11 GB | 5.8× |
+
+> `gsm8k` — exact_match (strict-match), 5-shot
+> `ifeval` — prompt_level_strict_acc, 0-shot
+
+
+
+
+## 📊 Zero-shot results — LLaMA-3 8B PTQ no fine-tuning
 
 ### 🟡 4-bit Quantization
 
@@ -159,7 +214,7 @@ Quantize the model with QTIP and evaluate downstream tasks:
 
 
 
-## 📊 Zero-shot results — Qwen-3 8B
+## 📊 Zero-shot results — Qwen-3 8B PTQ no fine-tuning
 
 ### 🟡 4-bit Quantization
 
