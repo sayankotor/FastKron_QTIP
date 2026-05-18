@@ -265,9 +265,9 @@ def training_process(args) -> None:
         )
 
     model.enable_input_require_grads()
-    model.gradient_checkpointing_enable(
-        gradient_checkpointing_kwargs={"use_reentrant": False}
-    )
+    #model.gradient_checkpointing_enable(
+    #    gradient_checkpointing_kwargs={"use_reentrant": False}
+    #)
     model.config.use_cache = False
 
     for param in model.parameters():

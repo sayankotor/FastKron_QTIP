@@ -246,10 +246,11 @@ def training_process(args) -> None:
         args.model_name,
         torch_dtype=torch.bfloat16,
         low_cpu_mem_usage=True,
-        device_map="auto",
+        #device_map="auto",
         attn_implementation=args.attn_impl,
         trust_remote_code=True,
     )
+    model = model.cuda()
 
     print(f"[{stamp()}] [collect] model loaded", flush=True)
     if hasattr(model, "hf_device_map") and model.hf_device_map:
@@ -268,9 +269,9 @@ def training_process(args) -> None:
         )
 
     model.enable_input_require_grads()
-    model.gradient_checkpointing_enable(
-        gradient_checkpointing_kwargs={"use_reentrant": False}
-    )
+    #model.gradient_checkpointing_enable(
+    #    gradient_checkpointing_kwargs={"use_reentrant": False}
+    #)
     model.config.use_cache = False
 
     for param in model.parameters():

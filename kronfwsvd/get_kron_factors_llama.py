@@ -38,7 +38,7 @@ from torch.multiprocessing import Process
 from tqdm.auto import tqdm
 
 
-LAYER_NAME_RE = re.compile(r"^model_layers_(\d+)_(self_attn|mlp)_[a-z_]+_proj$")
+LAYER_NAME_RE = re.compile(r"^(?:module_)?model_layers_(\d+)_(self_attn|mlp)_[a-z_]+_proj$")
 
 
 def stamp() -> str:
@@ -155,15 +155,15 @@ def get_kron_factors_worker(
     m, n = first.shape
     del first
 
-    bf16_gb = (k_total * m * n * 2) / 1e9
+    fp32_gb = (k_total * m * n * 4) / 1e9
     print(
-        f"[{stamp()}] {pfx} | loading grads to CPU ({bf16_gb:.1f} GB bf16)",
+        f"[{stamp()}] {pfx} | loading grads to GPU ({fp32_gb:.1f} GB fp32)",
         flush=True,
     )
 
     load_t0 = time.time()
-    big = torch.empty((k_total, m, n), dtype=torch.bfloat16)
-    for i, path in enumerate(file_paths):
+    grad_vectors: List[cp.ndarray] = []
+    for path in file_paths:
         with safe_open(path, framework="pt", device="cpu") as f:
             t = f.get_tensor(layer_name)
         if tuple(t.shape) != (m, n):
@@ -171,7 +171,8 @@ def get_kron_factors_worker(
                 f"shape mismatch at {path}:{layer_name}: got {tuple(t.shape)}, "
                 f"expected ({m},{n})"
             )
-        big[i].copy_(t.to(torch.bfloat16))
+        G = cp.asarray(t.to(torch.float32).numpy()).reshape(m, n, order="F")
+        grad_vectors.append(G)
     load_dt = time.time() - load_t0
 
     print(
@@ -181,7 +182,7 @@ def get_kron_factors_worker(
     )
     logger.info(
         f"[{layer_name}] gpu={device_id} loaded k={k_total} "
-        f"shape=({m},{n}) bf16 → {bf16_gb:.2f} GB CPU in {load_dt:.1f}s"
+        f"shape=({m},{n}) fp32 → {fp32_gb:.2f} GB GPU in {load_dt:.1f}s"
     )
 
     matvec_count = [0]
@@ -195,25 +196,15 @@ def get_kron_factors_worker(
             )
         V = vec.reshape(n, n, order="F")
         result = cp.zeros((m, m), dtype=cp.float32)
-        for ci in range(0, k_total, grad_chunk_size):
-            sub_fp32_np = big[ci:ci + grad_chunk_size].to(torch.float32).numpy()
-            sub_cp = cp.asarray(sub_fp32_np)
-            for j in range(sub_cp.shape[0]):
-                G = sub_cp[j].reshape(m, n, order="F")
-                result += G @ V @ G.T
-            del sub_cp
+        for G in grad_vectors:
+            result += G @ V @ G.T
         return (result / k_total).T.ravel()
 
     def r_matvec(vec):
         V = vec.reshape(m, m, order="F")
         result = cp.zeros((n, n), dtype=cp.float32)
-        for ci in range(0, k_total, grad_chunk_size):
-            sub_fp32_np = big[ci:ci + grad_chunk_size].to(torch.float32).numpy()
-            sub_cp = cp.asarray(sub_fp32_np)
-            for j in range(sub_cp.shape[0]):
-                G = sub_cp[j].reshape(m, n, order="F")
-                result += G.T @ V @ G
-            del sub_cp
+        for G in grad_vectors:
+            result += G.T @ V @ G
         return (result / k_total).T.ravel()
 
     print(
@@ -249,7 +240,7 @@ def get_kron_factors_worker(
         )
         logger.error(f"[{layer_name}] SVD failure on gpu {device_id}")
         logger.error(traceback.format_exc())
-        del big
+        del grad_vectors
         cp.get_default_memory_pool().free_all_blocks()
         return False
     svd_dt = time.time() - svd_t0
@@ -260,7 +251,7 @@ def get_kron_factors_worker(
         flush=True,
     )
 
-    out_path = kron_dir / f"{layer_name}.safetensors"
+    out_path = kron_dir / (layer_name.replace("module_", "") + ".safetensors")
     tmp_path = out_path.with_suffix(out_path.suffix + ".tmp")
     save_file({"XF": XF_t, "YF": YF_t, "s": s_t}, str(tmp_path))
     os.replace(tmp_path, out_path)
@@ -275,7 +266,7 @@ def get_kron_factors_worker(
         f"top sv={float(s[0]):.4f} | peak RSS={peak_rss_gb():.2f} GB"
     )
 
-    del big
+    del grad_vectors
     cp.get_default_memory_pool().free_all_blocks()
     return True
 
