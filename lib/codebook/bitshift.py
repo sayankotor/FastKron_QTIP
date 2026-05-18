@@ -462,11 +462,34 @@ class BitshiftLinear(nn.Module):
                 x = matmul_hadUt_cuda(x, had_left, K_left) / self.scale
 
             if bs == 1 and self.has_kernel:
-                wrapper = getattr(
-                    torch.ops.quip_lib,
-                    f"decompress_matvec_qtip_{m}_1_{x.numel()}_{self.cb.K}")
+                # Fast path: bypass torch.ops.quip_lib dispatch.
+                # Eliminates per-call: f-string + getattr on torch.ops
+                # (~10 us) + torch.library dispatcher (~10 us) + Python
+                # impl + torch.zeros alloc+memset (~10 us) + repeated
+                # reshape/view (~5 us). Cached once per BitshiftLinear
+                # instance -- each instance only sees one (m, n, K) shape,
+                # one trellis tensor, one tlut.
+                if not hasattr(self, "_qtip_fast"):
+                    import qtip_kernels as _qk
+                    self._qtip_fast = getattr(
+                        _qk,
+                        f"decompress_matvec_16_9_{self.cb.K}_1_{m}_1_{x.numel()}")
+                    # Kernel writes (does not accumulate) every output row
+                    # under the current grid sizing, so empty() is safe --
+                    # no memset needed per call.
+                    self._qtip_out = torch.empty((m, 1),
+                                                 dtype=torch.float32,
+                                                 device=x.device)
+                    self._qtip_trellis = trellis.reshape(-1).view(torch.int32)
+                    self._qtip_tlut = self.cb.tlut.reshape(-1)
 
-                x = wrapper(trellis, x, self.cb.tlut)
+                self._qtip_fast(
+                    self._qtip_out,
+                    self._qtip_trellis,
+                    x.to(torch.float16).T,
+                    self._qtip_tlut,
+                )
+                x = self._qtip_out.T
 
             else:
                 if mode == 'train-recons':
