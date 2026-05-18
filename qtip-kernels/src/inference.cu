@@ -24,7 +24,11 @@ using namespace nvcuda;
 #define MMA_N                   8
 #define MMA_K                   16
 
-#define BLOCK_COUNT             128
+// Per-shape grid size: each block handles 2 row-tiles (m_per_block=1) up to a
+// cap of MAX_BLOCK_COUNT (~8 waves on a 108-SM A100). Previously this was a
+// hardcoded 128, which gave m_per_block=7 for M=27648 — each block then did
+// 7 serial mi-iterations with a __syncthreads() between them.
+#define MAX_BLOCK_COUNT         864
 //#define MAX_THREADS_PER_SM      2048
 #define WARP_SIZE               32
 #define BLOCK_SIZE              1024
@@ -33,6 +37,14 @@ using namespace nvcuda;
 #define PREFETCHW               4
 #define PREFETCHX               4
 #define BLOCKS_PER_SM           1
+
+// gridSize = min(tileCountM / 2, MAX_BLOCK_COUNT).
+// tileCountM = M / MMA_M is asserted even, so /2 is exact.
+__host__ __device__ constexpr uint32_t compute_block_count(uint32_t M_param) {
+    return ((M_param / MMA_M) / 2) < MAX_BLOCK_COUNT
+        ? ((M_param / MMA_M) / 2)
+        : MAX_BLOCK_COUNT;
+}
 
 #define FULL_MASK               0xFFFFFFFFU
 
@@ -192,7 +204,8 @@ kernel_decompress_matvec(
 #define ROUND_UP(a, b) ((a + b - 1) / b)
 
     static_assert (tileCountM % 2 == 0);
-    constexpr uint32_t m_per_block = ROUND_UP(tileCountM, (2 * BLOCK_COUNT));
+    constexpr uint32_t kernelBlockCount = compute_block_count(M);
+    constexpr uint32_t m_per_block = ROUND_UP(tileCountM, (2 * kernelBlockCount));
     // tiles are iterated along k in groups of 2
     //static_assert (tileCountK >= warps_per_block * 2);
     constexpr uint32_t k_per_block = tileCountK / (warps_per_block * 4) * 2;
@@ -448,22 +461,26 @@ __host__ static void decompress_matvec_ptr(
     static_assert(N == 1);
     static_assert(K % MMA_K == 0);
 
-    cudaDeviceProp deviceProp;
-    cudaGetDeviceProperties(&deviceProp, 0);
-    //assert(deviceProp.multiProcessorCount == SM_COUNT);
-    //assert(deviceProp.maxThreadsPerMultiProcessor == MAX_THREADS_PER_SM);
-    assert(deviceProp.warpSize == WARP_SIZE);
-
     //static_assert(MAX_THREADS_PER_SM % BLOCK_SIZE == 0);
     static_assert(BLOCK_SIZE % WARP_SIZE == 0);
 
-    constexpr uint32_t gridSize = BLOCK_COUNT;
+    constexpr uint32_t gridSize = compute_block_count(M);
     constexpr uint32_t blockSize = BLOCK_SIZE;
     constexpr uint32_t smemCodebookSize = 1<<(S+5+V+1);
     constexpr uint32_t smemReduceGatherSize = 2 * BLOCK_SIZE * sizeof(float4);
-    cudaFuncSetAttribute(kernel_decompress_matvec<L, S, R, V, M, N, K>,
-            cudaFuncAttributeMaxDynamicSharedMemorySize,
-            smemCodebookSize);
+    // cudaFuncSetAttribute must be called at least once per kernel symbol
+    // before launching with > 48 KB dynamic smem. Each (L,S,R,V,M,N,K)
+    // template instantiation has its own static guard, so the driver call
+    // happens once per shape per process instead of on every launch.
+    // (Previously this + cudaGetDeviceProperties added ~1 ms of host
+    // overhead to every launch, which dominated the measured per-call time.)
+    static bool s_smem_attr_set = false;
+    if (!s_smem_attr_set) {
+        cudaFuncSetAttribute(kernel_decompress_matvec<L, S, R, V, M, N, K>,
+                cudaFuncAttributeMaxDynamicSharedMemorySize,
+                smemCodebookSize);
+        s_smem_attr_set = true;
+    }
 
     kernel_decompress_matvec<L, S, R, V, M, N, K><<<gridSize, blockSize, smemCodebookSize, stream>>>(out, compressed, x, codebook);
     

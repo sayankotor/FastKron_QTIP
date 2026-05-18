@@ -15,8 +15,13 @@ setup(
                 "cxx": ["-O3", "--fast-math", "-lineinfo", "-std=c++17"],
                 "nvcc": [
                     "-O3", "--use_fast_math", "-lineinfo", "-keep",
-                    "-std=c++17", "--ptxas-options=-v",
-                    "--expt-relaxed-constexpr"
+                    "-std=c++17",
+                    # A100-specific: SASS for sm_80 + PTX fallback for newer archs.
+                    "-gencode=arch=compute_80,code=sm_80",
+                    "-gencode=arch=compute_80,code=compute_80",
+                    # ptxas: register usage + spill/lmem diagnostics.
+                    "-Xptxas=-v,-warn-spills,-warn-lmem-usage",
+                    "--expt-relaxed-constexpr",
                 ]
             }
         )
