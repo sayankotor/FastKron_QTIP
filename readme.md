@@ -141,6 +141,25 @@ Quantize the model with QTIP and evaluate downstream tasks:
 ```
 
 
+# Quantizing large models (chunked pipeline)
+
+For models larger than 10B parameters use the chunked pipeline: model layers are
+split into chunks, and Kronecker-Fisher factors are computed one chunk at a time.
+GPU memory stays bounded regardless of model size; total runtime grows
+proportionally to the number of chunks.
+
+### Stage 1 — collect per-chunk gradients and compute Kronecker factors
+bash run_experiment_7b_true_accum.sh <MODEL_NAME>
+
+Key parameters inside the script (override via env vars or edit lines 25–28):
+
+NUM_LAYERS=32         # total layers in the model
+CHUNK_SIZE=16         # how many layers per chunk
+DATASET_SIZE=9600     # number of calibration sequences
+GRAD_ACCUM=64         # gradient-accumulation steps
+MAX_LENGTH=2048       # sequence length
+LR=1e-7               # learning rate
+
 # Quantizing a large model
 
 If you need to quantize a large model, switch to the `quantize_big_model` branch.
@@ -150,6 +169,25 @@ others stay idle. This prevents excessive memory usage (at the cost of being
 slower).
 
 We recommend this option for models larger than 10B parameters. 
+
+Outputs Kronecker factors to `<run_dir>/factors/`.
+
+### Stage 2 — quantize from precomputed factors + convert to HF
+
+SAVE_DIR_BASE=<output_dir> bash run_quantizer_qwen.sh 
+<MODEL_NAME> 
+<FACTORS_DIR> 
+<OUTPUT_FOLDER_NAME>
+
+This runs `quantize_finetune_llama.py` → `hfize_qwen2.py` → perplexity and
+zero-shot evaluation in sequence. Override the bitrate via `--K 2` or `--K 4`.
+
+### Recommended settings per model size
+
+| Model | NUM_LAYERS | CHUNK_SIZE | GRAD_ACCUM | MAX_LENGTH |
+|---|---|---|---|---|
+| Llama-2 7B | 32 | 16 | 64 | 2048 |
+| Qwen2.5-32B | 64 | 16 | 96 | 3096 |
 
 
 # Results for released quantized models
