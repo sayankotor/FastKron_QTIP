@@ -77,6 +77,11 @@ for _ in tqdm(range(1)):
 print('result:', tokenizer.batch_decode(res.cpu()))
 ```
 
+## How to add a kernel for a layer with an unseen shape
+
+For kernel-level details and how to measure speed see
+[README_KERNELS.md](README_KERNELS.md).
+
 # Quantization from scratch:
 
 ### 0. Installation
@@ -147,11 +152,6 @@ slower).
 We recommend this option for models larger than 10B parameters. 
 
 
-# How to add a kernel for a layer with an unseen shape
-
-For kernel-level details and how to measure speed see
-[README_KERNELS.md](README_KERNELS.md).
-
 # Results for released quantized models
 
 ## 📊 Zero-shot results — Qwen-2.5 32B PTQ no fine-tuning
@@ -190,7 +190,6 @@ For kernel-level details and how to measure speed see
 
 > `gsm8k` — exact_match (strict-match), 5-shot
 > `ifeval` — prompt_level_strict_acc, 0-shot
-
 
 
 
