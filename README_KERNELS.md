@@ -5,10 +5,21 @@
 - Batches 1–3: `lr = 1e-4`
 - Batch 4: `lr = 1e-6`
 
-## Inference with `--manifest` flag
+## Inference
+
+### 1) with `--manifest` flag
 
 Quantized weight matrices are converted back to bfloat16 on every forward pass.
-Speed is the same as the unquantized model.
+Speed is the same as the unquantized model, but memory usage matches bfloat16
+(no compression benefit). Use this mode for accuracy validation or when fast
+CUDA kernels are unavailable.
+
+### 2) with `--manifest kernel` flag
+
+Quantized matrix-vector products are computed directly on packed weights using
+custom CUDA kernels (`qtip_kernels`). Memory usage stays compressed (5.8× smaller
+for 2-bit), but inference speed is currently lower than baseline due to Python
+and kernel-launch overhead around each projection.
 
 ## C++ code structure — where to plug in kernels for a new layer shape
 

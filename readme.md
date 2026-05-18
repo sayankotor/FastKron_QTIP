@@ -136,7 +136,7 @@ Quantize the model with QTIP and evaluate downstream tasks:
 ```
 
 
-#### 4. Quantizing a large model
+# Quantizing a large model
 
 If you need to quantize a large model, switch to the `quantize_big_model` branch.
 It implements chunked quantization: the model is split into blocks, and for each
@@ -147,10 +147,12 @@ slower).
 We recommend this option for models larger than 10B parameters. 
 
 
-#### 5. How to add a kernel for a layer with an unseen shape
+# How to add a kernel for a layer with an unseen shape
 
 For kernel-level details and how to measure speed see
 [README_KERNELS.md](README_KERNELS.md).
+
+# Results for released quantized models
 
 ## 📊 Zero-shot results — Qwen-2.5 32B PTQ no fine-tuning
 
