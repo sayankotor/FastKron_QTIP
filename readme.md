@@ -143,10 +143,10 @@ Quantize the model with QTIP and evaluate downstream tasks:
 
 # Quantizing large models (chunked pipeline)
 
-For models larger than 10B parameters use the chunked pipeline: model layers are
+For models larger than 10B parameters use the chunked pipeline (`quantize_big_model` branch): model layers are
 split into chunks, and Kronecker-Fisher factors are computed one chunk at a time.
-GPU memory stays bounded regardless of model size; total runtime grows
-proportionally to the number of chunks.
+GPU memory stays bounded regardless of model size. This prevents excessive memory usage (at the cost of being
+slower).
 
 ### Stage 1 — collect per-chunk gradients and compute Kronecker factors
 bash run_experiment_7b_true_accum.sh <MODEL_NAME>
@@ -160,15 +160,6 @@ GRAD_ACCUM=64         # gradient-accumulation steps
 MAX_LENGTH=2048       # sequence length
 LR=1e-7               # learning rate
 
-# Quantizing a large model
-
-If you need to quantize a large model, switch to the `quantize_big_model` branch.
-It implements chunked quantization: the model is split into blocks, and for each
-selected block the calibration and Kronecker-factor computation runs while the
-others stay idle. This prevents excessive memory usage (at the cost of being
-slower).
-
-We recommend this option for models larger than 10B parameters. 
 
 Outputs Kronecker factors to `<run_dir>/factors/`.
 
