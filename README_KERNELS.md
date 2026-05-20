@@ -9,9 +9,8 @@
 
 ### 1) with `--manifest` flag
 
-Quantized weight matrices are converted back to bfloat16 on every forward pass.
-Speed is the same as the unquantized model, but memory usage matches bfloat16
-(no compression benefit). Use this mode for accuracy validation or when fast
+Quantized weight matriх are converted back to bfloat16 on every forward pass.
+Speed is the same as the unquantized model. Use this mode for accuracy validation or when fast
 CUDA kernels are unavailable.
 
 ### 2) with `--manifest kernel` flag
