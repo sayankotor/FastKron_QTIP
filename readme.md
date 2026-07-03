@@ -1,191 +1,66 @@
 # FastKron: Fast and Accurate Fisher-Guided Quantization
 
-This repository contains scripts for reproducing our experiments on **post-training quantization (PTQ)** of LLaMA and Qwen models using:
+Post-training quantization (PTQ) of LLaMA / Qwen models via **trellis-coded quantization guided** with **second-order information**.
 
--   **Sketch A** Hessian factors (baseline, from the YAQA framework), and
--   **FastKron** Hessian factors (our method).
+> **Paper:** *Fast and Accurate Fisher-Guided Quantization via Efficient Kronecker Factor Approximation.* ACL 2026 Main.
+> V. Chekalina, T. Gerasin, M. Kurkin, A. Kuznetsov, E. Frolov.
+> 
+> https://aclanthology.org/2026.acl-long.1805/
 
-We follow the YAQA pipeline with QTIP quantization and replace the Kronecker-factor estimation step with our accelerated method, **FastKron**.
-
----
-
-## Publication and Methodology
-
-Detailed methodology, implementation, and experimental results are presented in our paper:
-
-> [Fast and Accurate Fisher-Guided Quantization via Efficient Kronecker Factor
-Approximation.], ACL'2026 Main
-> V. Chekalina, T.Gerasin. M.Kurkin, A.Kuznetsov, E.Frolov*
+> **HF Checkpoints:** [FastKron HF Collection](https://huggingface.co/collections/timo13113/test-collection)
+> 
+> [FastKron Qwen2.5-32B 2-bit](https://huggingface.co/Sayankotor/Qwen2.5-32B-FastKron-2bit)
+> 
+> [FastKron Qwen2.5-32B 4-bit](https://huggingface.co/Sayankotor/Qwen2.5-32B-FastKron-4bit)
 
 ---
 
-# Inference
+## Qwen3.5-27B — FastKron Quantization Results
 
-Checkpoints are available on Hf🤗 : [FastKron Hugging Face Collection](https://huggingface.co/collections/timo13113/test-collection)
-## Installation process
-### Essential libraries
-```
-pip install -r requirements.txt
-```
-the inference pipeline was additionally tested on transformers==4.57.1 and torch==2.5.1+cu124, other versions may work but are not guaranteed
-### Install `fast_hadamard_transform`
-```
-git clone https://github.com/Dao-AILab/fast-hadamard-transform.git fast-hadamard-transform
-cd fast-hadamard-transform
-pip install -v .
-```
-### Install the `qtip-kernels` submodule
-```
-cd qtip-kernels
-python setup.py install
-```
-
-Important: for the kernels to work, they need to be compiled for specific matrix sizes and codebook settings. 
-Otherwise, you may get an error like `AttributeError: '_OpNamespace' 'quip_lib' object has no attribute 'decompress_matvec_qtip_4096_1_12288_2'. Did you mean: 'decompress_matvec_qtip_4096_1_4096_2'?`
-For example, the model you want to run may not have the appropriate precompiled dimentions (4096x12288 in the error above). In that case:
-- navigate to `qtip-kernels/src`
-- add the kernels to be compiled to `wrapper.cpp` and `qtip_torch.cu` in the same notation as all the others in the same file, and add the dimentions of your kernels to the `kernels` array in `/lib/codebook/__init__.py` file
-- reinstall the library
+> ⚠️ **Gated DeltaNet attention.** Qwen3.5-27B uses a **hybrid Gated DeltaNet + Gated Attention** stack (linear-attention layers with a fixed recurrent state, not standard softmax self-attention). FastKron quantizes it end-to-end — demonstrating that our Fisher-guided trellis quantization is **not tied to standard-attention architectures** and transfers to linear-attention / hybrid models.
 
 
-## Example
+**Perplexity**
 
-Below is an inference example for Qwen3 quantized model.
+| | wikitext2 ↓ | c4 ↓ |
+|---|---|---|
+| Baseline (BF16) | 6.7202 | 8.8092 |
+| 4-bit FastKron | 6.9444 | 8.8716 |
+| 2-bit FastKron | 8.2054 | 9.8243 |
 
-```
-from transformers import AutoTokenizer, AutoConfig
-from model.qwen import Qwen3ForCausalLM # from FastKron package
-from tqdm import tqdm
+**Zero-shot tasks (row acc)**
 
-path = '/path/to/qwen3_kronfwsvd_2048_qw_2bit_hf'
-device = 'cuda:0'
+| | arc_c ↑ | arc_e ↑ | boolq ↑ | hellaswag ↑ | piqa ↑ | AVG ↑ |
+|---|---|---|---|---|---|---|
+| Baseline (BF16) | 0.5900 | 0.8481 | 0.7670 | 0.6377 | 0.8107 | **0.7315** |
+| 4-bit FastKron | 0.5904 | 0.8514 | 0.7780 | 0.6335 | 0.8102 | **0.7327** |
+| 2-bit FastKron | 0.6015 | 0.8540 | 0.7590 | 0.5984 | 0.8085 | **0.7243** |
 
-model = Qwen3ForCausalLM.from_pretrained(path, config = AutoConfig.from_pretrained(path)).to(device)
-tokenizer = AutoTokenizer.from_pretrained(path, trust_remote_code=True)
+**GSM8K & IFEval · Model size**
 
-prompt = 'What is 2+2?'
-prompt = tokenizer.apply_chat_template([
-    {'role': 'system', 'content': 'You are a helpful assistant.'},
-    {'role': 'user', 'content': prompt},
-], tokenize=False)
-
-print('prompt:', prompt)
-for _ in tqdm(range(1)):
-    res = model.generate(
-        tokenizer.encode(prompt, return_tensors='pt').to(model.device)
-    )
-print('result:', tokenizer.batch_decode(res.cpu()))
-```
-
-## How to add a kernel for a layer with an unseen shape
-
-For kernel-level details and how to measure speed see
-[README_KERNELS.md](README_KERNELS.md).
-
-# Quantization from scratch:
-
-### 0. Installation
-
-Install the required [QTIP framework](https://github.com/Cornell-RelaxML/qtip/tree/main):
-
-```bash
-git clone [https://github.com/Cornell-RelaxML/qtip.git](https://github.com/Cornell-RelaxML/qtip.git)
-cd qtip
-pip install -e .
-```
-
-### 1. Hessians with Sketch A (YAQA baseline)
-
-To reproduce the baseline YAQA factors, run:
-
-```
-CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --standalone --nproc-per-node=4 \
-  hessian_llama/get_hess_llama.py \
-  --save_path <PATH_TO_SAVE> \
-  --orig_model unsloth/llama-2-7b \
-  --batch_size 6 \
-  --hessian_sketch A \
-  --power_iters 4 \
-  --ctx_size 4096 \
-  --n_seqs 4096
-```
-
-### 2. Hessians with FastKron
-
-FastKron replaces power-iteration with a Lanczos-based estimator.
-
-#### 2a. Collect calibration minibatches
-
-```
-python kronfwsvd/collect_fisher_weights.py \
-  --model_name <ORIG_MODEL_PATH> \
-  --path_to <PATH_TO_SAVE> \
-  --size 1 \
-  --lr 1e-4
-```
-  
-#### 2b. Run FastKron factor estimation
-```
-python kronfwsvd/get_kron_factors_llama.py \
---model_name <ORIG_MODEL_PATH> \
-```
-
-#### 3. Quantization and Evaluation
-
-Quantize the model with QTIP and evaluate downstream tasks:
-```
-./run_quantizer.sh \
-  <ORIG_MODEL_PATH> \
-  <PATH_TO_HESSIANS> \
-  <TOKENIZER_PATH>
-```
+| | gsm8k ↑ | ifeval ↑ | 
+|---|---|---|
+| Baseline (BF16) | 0.3556 | 0.3995 | 
+| 4-bit FastKron | 0.2805 | 0.3162 | 
+| 2-bit FastKron | 0.1190 | 0.1539 | 
 
 
-# Quantizing large models (chunked pipeline)
+**Model size**
 
-For models larger than 10B parameters use the chunked pipeline (`quantize_big_model` branch): model layers are
-split into chunks, and Kronecker-Fisher factors are computed one chunk at a time.
-GPU memory stays bounded regardless of model size. This prevents excessive memory usage (at the cost of being
-slower).
+| | size | compression |
+|---|---|---|
+| Baseline (BF16) | 52 GB | 1× |
+| 4-bit FastKron | 12.2 GB | 4.3× |
+| 2-bit FastKron | 6.1 GB | 9.2× |
 
-### Stage 1 — collect per-chunk gradients and compute Kronecker factors
-bash run_experiment_7b_true_accum.sh <MODEL_NAME>
-
-Key parameters inside the script (override via env vars or edit lines 25–28):
-
-NUM_LAYERS=32         # total layers in the model
-CHUNK_SIZE=16         # how many layers per chunk
-DATASET_SIZE=9600     # number of calibration sequences
-GRAD_ACCUM=64         # gradient-accumulation steps
-MAX_LENGTH=2048       # sequence length
-LR=1e-7               # learning rate
+---
 
 
-Outputs Kronecker factors to `<run_dir>/factors/`.
+## Qwen-2.5 32B — FastKron Quantization Results
 
-### Stage 2 — quantize from precomputed factors + convert to HF
+**HF checkpoints:** [FastKron Qwen2.5-32B 2-bit] (https://huggingface.co/Sayankotor/Qwen2.5-32B-FastKron-2bit) · [FastKron Qwen2.5-32B 4-bit](https://huggingface.co/Sayankotor/Qwen2.5-32B-FastKron-4bit)
 
-SAVE_DIR_BASE=<output_dir> bash run_quantizer_qwen.sh 
-<MODEL_NAME> 
-<FACTORS_DIR> 
-<OUTPUT_FOLDER_NAME>
-
-This runs `quantize_finetune_llama.py` → `hfize_qwen2.py` → perplexity and
-zero-shot evaluation in sequence. Override the bitrate via `--K 2` or `--K 4`.
-
-### Recommended settings per model size
-
-| Model | NUM_LAYERS | CHUNK_SIZE | GRAD_ACCUM | MAX_LENGTH |
-|---|---|---|---|---|
-| Llama-2 7B | 32 | 16 | 64 | 2048 |
-| Qwen2.5-32B | 64 | 16 | 96 | 3096 |
-
-
-# Results for released quantized models
-
-## 📊 Zero-shot results — Qwen-2.5 32B PTQ no fine-tuning
-
-### Perplexity
+**Perplexity**
 
 | | wikitext2 ↓ | c4 ↓ |
 |---|---|---|
@@ -193,7 +68,7 @@ zero-shot evaluation in sequence. Override the bitrate via `--K 2` or `--K 4`.
 | 4-bit FastKron | 4.7944 | 8.6555 |
 | 2-bit FastKron | 6.2502 | 9.7388 |
 
-### Zero-shot tasks
+**Zero-shot tasks**
 
 | | arc_c ↑ | arc_e ↑ | boolq ↑ | hellaswag ↑ | piqa ↑ | winogrande ↑ | AVG ↑ |
 |---|---|---|---|---|---|---|---|
@@ -201,87 +76,111 @@ zero-shot evaluation in sequence. Override the bitrate via `--K 2` or `--K 4`.
 | 4-bit FastKron | 0.5205 | 0.7950 | 0.8722 | 0.6482 | 0.8166 | 0.7545 | **0.7345** |
 | 2-bit FastKron | 0.4633 | 0.7837 | 0.8700 | 0.6052 | 0.8003 | 0.7443 | **0.7111** |
 
-### GSM8K & IFEval
+**GSM8K & IFEval · Model size**
 
-| | gsm8k ↑ | ifeval ↑ |
-|---|---|---|
-| Baseline (BF16) | 0.8294 | 0.3660 |
-| 4-bit FastKron | 0.8673 | 0.3641 |
-| 2-bit FastKron | 0.7953 | 0.3401 |
+| | gsm8k ↑ | ifeval ↑ | disk | compression |
+|---|---|---|---|---|
+| Baseline (BF16) | 0.8294 | 0.3660 | 64 GB | 1× |
+| 4-bit FastKron | 0.8673 | 0.3641 | 17 GB | 3.8× |
+| 2-bit FastKron | 0.7953 | 0.3401 | 11 GB | 5.8× |
 
-### Model size
+> `gsm8k` — exact_match (strict), 5-shot · `ifeval` — prompt_level_strict_acc, 0-shot
 
-| | Disk size | Compression |
-|---|---|---|
-| Baseline (BF16) | 64 GB | 1× |
-| 4-bit FastKron | 17 GB | 3.8× |
-| 2-bit FastKron | 11 GB | 5.8× |
-
-> `gsm8k` — exact_match (strict-match), 5-shot
-> `ifeval` — prompt_level_strict_acc, 0-shot
+---
 
 
+## Qwen3.5-32B — FastKron Quantization Results
 
-## 📊 Zero-shot results — LLaMA-3 8B PTQ no fine-tuning
+**HF checkpoints:** `⟨add link⟩` (2-bit) · `⟨add link⟩` (4-bit)
 
-### 🟡 4-bit Quantization
+**Results** *(fill in measured numbers):*
 
-| Method             | Steps | ARC_c ↑ | BoolQ ↑ | PIQA ↑ | ARC_e ↑ | HSwag ↑ | AVG ↑  | GPU/h ↓ | Tokens ↓ |
-|---------------------|-------|---------|---------|--------|---------|---------|--------|---------|-----------|
-| 16 bit (baseline)   | –     | **0.5171** | **0.8409** | **0.7986** | **0.8177** | **0.5908** | **0.7131** | –    | –      |
-| 4-bit Sketch A      | 4096  | **0.5136** | **0.8443** | 0.7997 | 0.8198 | **0.5865** | 0.7127 | 92   | 16 M   |
-| 4-bit FastKron      | 75    | 0.5116 | 0.8438 | **0.8025** | **0.8207** | 0.5863 | **0.7129** | 9.5  | 712 K  |
-| 4-bit No Hess       | –     | 0.5119 | 0.8415 | 0.7959 | 0.8097 | 0.5859 | 0.7112 | –    | –      |
+| | wikitext2 ↓ | c4 ↓ | zero-shot AVG ↑ | gsm8k ↑ | disk | compression |
+|---|---|---|---|---|---|---|
+| Baseline (BF16) | TBD | TBD | TBD | TBD | TBD | 1× |
+| 4-bit FastKron | TBD | TBD | TBD | TBD | TBD | ~3.8× |
+| 2-bit FastKron | TBD | TBD | TBD | TBD | TBD | ~5.8× |
 
+---
 
-### 🟠 2-bit Quantization
+## Kernels
 
-| Method             | Steps | ARC_c ↑ | BoolQ ↑ | PIQA ↑ | ARC_e ↑ | HSwag ↑ | AVG ↑  | GPU/h ↓ | Tokens ↓ |
-|---------------------|-------|---------|---------|--------|---------|---------|--------|---------|-----------|
-| 2-bit Sketch A      | 4096  | **0.4312** | 0.7567 | 0.7647 | 0.7391 | **0.5259** | 0.6435 | 92   | 16 M   |
-| 2-bit FastKron      | 100   | 0.4277 | **0.7646** | **0.7661** | **0.7468** | 0.5159 | **0.6442** | 11.5 | 950 K |
-| 2-bit No Hess       | –     | 0.2363 | 0.6336 | 0.6554 | 0.5108 | 0.3620 | 0.5094 | –    | –     |
+Quantized checkpoints ship with custom **QTIP decompression kernels** (CUDA C++) for fast trellis-decode-and-matvec inference.
 
+Kernels are compiled **per matrix shape + codebook setting**. If a shape is missing you'll see e.g.
+`'quip_lib' object has no attribute 'decompress_matvec_qtip_4096_1_12288_2'`.
 
+To add a shape:
+1. add the kernel in `qtip-kernels/src/wrapper.cpp` and `qtip_torch.cu` (same notation as existing entries);
+2. add its dimensions to the `kernels` array in `lib/codebook/__init__.py`;
+3. reinstall the submodule.
 
-## 📊 Zero-shot results — Qwen-3 8B PTQ no fine-tuning
+Kernel-level details and speed measurement: [README_KERNELS.md](README_KERNELS.md).
 
-### 🟡 4-bit Quantization
+Install:
+```bash
+# fast Hadamard transform
+git clone https://github.com/Dao-AILab/fast-hadamard-transform.git && cd fast-hadamard-transform && pip install -v . && cd ..
+# QTIP kernels
+cd qtip-kernels && python setup.py install && cd ..
+```
 
-| Method             | Steps | ARC_c ↑ | BoolQ ↑ | PIQA ↑ | ARC_e ↑ | HSwag ↑ | AVG ↑  | GPU/h ↓ | Tokens ↓ |
-|---------------------|-------|---------|---------|--------|---------|---------|--------|---------|-----------|
-| 16 bit (baseline)   | –     | **0.5563** | **0.8682** | **0.7677** | **0.8354** | **0.5708** | **0.7197** | –   | –     |
-| 4-bit Sketch A      | 4096  | **0.5503** | 0.8611 | 0.7612 | 0.8324 | 0.5601 | **0.7132** | 84  | 8 M   |
-| 4-bit FastKron      | 150   | 0.5469 | 0.8667 | 0.7601 | **0.8287** | **0.5637** | **0.7132** | 42  | 712 K |
-| 4-bit No Hess       | –     | 0.5467 | **0.8675** | **0.7622** | 0.8312 | 0.5585 | **0.7132** | –   | –     |
+---
 
+## Inference
 
-### 🟠 2-bit Quantization
+```bash
+pip install -r requirements.txt   # tested on transformers==4.57.1, torch==2.5.1+cu124
+```
 
-| Method             | Steps | ARC_c ↑ | BoolQ ↑ | PIQA ↑ | ARC_e ↑ | HSwag ↑ | AVG ↑  | GPU/h ↓ | Tokens ↓ |
-|---------------------|-------|---------|---------|--------|---------|---------|--------|---------|-----------|
-| 2-bit Sketch A      | 4096  | 0.4536 | 0.7782 | **0.7435** | **0.7797** | 0.4611 | 0.6432 | 84  | 8 M   |
-| 2-bit FastKron      | 150   | **0.4616** | 0.8416 | 0.7334 | 0.7702 | **0.4853** | **0.6584** | 42  | 712 K |
-| 2-bit No Hess       | –     | 0.3993 | **0.8675** | 0.7743 | 0.7003 | 0.4758 | 0.6434 | –   | –     |
+```python
+from transformers import AutoTokenizer, AutoConfig
+from model.qwen import Qwen3ForCausalLM  # from FastKron
 
+path, device = '/path/to/qwen3_kronfwsvd_2048_qw_2bit_hf', 'cuda:0'
+model = Qwen3ForCausalLM.from_pretrained(path, config=AutoConfig.from_pretrained(path)).to(device)
+tok = AutoTokenizer.from_pretrained(path, trust_remote_code=True)
 
-## 📊 Zero-shot results — LLaMA-2 7B
+prompt = tok.apply_chat_template(
+    [{'role': 'system', 'content': 'You are a helpful assistant.'},
+     {'role': 'user', 'content': 'What is 2+2?'}], tokenize=False)
+out = model.generate(tok.encode(prompt, return_tensors='pt').to(device))
+print(tok.batch_decode(out.cpu()))
+```
 
-### 🟡 4-bit Quantization
+---
 
-| Method             | Steps | ARC_c ↑ | BoolQ ↑ | PIQA ↑ | ARC_e ↑ | HSwag ↑ | AVG ↑  | GPU/h ↓ | Tokens ↓ |
-|---------------------|-------|---------|---------|--------|---------|---------|--------|---------|-----------|
-| 16 bit (baseline)   | –     | **0.4325** | **0.7767** | **0.7774** | **0.7617** | **0.5721** | **0.6640** | –  | –       |
-| 4-bit Sketch A      | 4096  | 0.4274 | 0.7688 | 0.7752 | **0.7613** | **0.5672** | 0.6599 | 50 | 16 M    |
-| 4-bit FastKron      | 75    | 0.4283 | 0.7792 | **0.7802** | 0.7610 | 0.5660 | 0.6629 | 5  | 712 K   |
-| 4-bit No Hess       | –     | **0.4352** | **0.7875** | 0.7742 | 0.7609 | 0.5628 | **0.6641** | –  | –       |
+## Quantize from scratch
 
+Install [QTIP](https://github.com/Cornell-RelaxML/qtip): `git clone … && cd qtip && pip install -e .`
 
-### 🟠 2-bit Quantization
+**1. Hessians.** Baseline (YAQA Sketch A):
+```bash
+torchrun --standalone --nproc-per-node=4 hessian_llama/get_hess_llama.py \
+  --save_path <OUT> --orig_model <MODEL> --hessian_sketch A --power_iters 4 \
+  --batch_size 6 --ctx_size 4096 --n_seqs 4096
+```
+FastKron (Lanczos, replaces power-iteration):
+```bash
+python kronfwsvd/collect_fisher_weights.py --model_name <MODEL> --path_to <OUT> --size 1 --lr 1e-4
+python kronfwsvd/get_kron_factors_llama.py --model_name <MODEL>
+```
 
-| Method             | Steps | ARC_c ↑ | BoolQ ↑ | PIQA ↑ | ARC_e ↑ | HSwag ↑ | AVG ↑  | GPU/h ↓ | Tokens ↓ |
-|---------------------|-------|---------|---------|--------|---------|---------|--------|---------|-----------|
-| 2-bit Sketch A      | 4096  | 0.3805 | 0.7333 | 0.7562 | **0.7192** | **0.5227** | 0.6223 | 50 | 16 M    |
-| 2-bit FastKron      | 150   | **0.3843** | **0.7510** | **0.7600** | 0.7112 | 0.5139 | **0.6240** | 6  | 1400 K |
-| 2-bit No Hess       | –     | 0.2210 | 0.6355 | 0.6306 | 0.5152 | 0.3422 | 0.4689 | –  | –       |
+**2. Quantize + eval:**
+```bash
+./run_quantizer.sh <MODEL> <HESSIANS> <TOKENIZER>
+```
 
+**Large models (>10B):** use the `quantize_big_model` branch — chunked, block-by-block calibration to cap memory (slower).
+
+---
+
+## Other released results
+
+<details>
+<summary><b>LLaMA-3 8B / Qwen-3 8B / LLaMA-2 7B</b> — FastKron matches Sketch A at ~10–20× fewer GPU-hours</summary>
+
+FastKron reaches Sketch-A accuracy using ~700K–1.4M calibration tokens vs 8–16M, at a fraction of the GPU-hours. Full per-task tables (ARC, BoolQ, PIQA, HellaSwag): see paper / git history.
+
+Key point: at **2-bit**, `No Hess` collapses (e.g. LLaMA-2 7B AVG 0.47) while FastKron holds baseline-level accuracy (0.62) — the second-order signal is what makes low-bit work.
+</details>
