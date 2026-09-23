@@ -21,21 +21,94 @@ Checkpoints are available on Hf🤗 :
 Detailed methodology, implementation, and experimental results are presented in our paper:
 
 > [Fast and Accurate Fisher-Guided Quantization via Efficient Kronecker Factor
-Approximation.], ACL'2026 Main
-> V. Chekalina, T.Gerasin. M.Kurkin, A.Kuznetsov, E.Frolov*
+Approximation.], ACL'2026 
+> V. Chekalina, T.Gerasin. A.Kuznetsov, E.Frolov
 
 ---
 
-# Results for released 2.5 quantized models
+## Results for released Qwen3.5-27B quantized models
 
-## 📊 Zero-shot results — 
+### 📊 Zero-shot results on Image Benchmarks 
+
+| Accuracy | MMBench | MME | MMMU | OCRBench |
+| :--- | :--- | :--- | :--- | :--- |
+| Mode | No-thinking | No-thinking | No-thinking | No-thinking |
+| tok_gen | 1024 | 1024 | 1024 | 1024 |
+| Примеров | 1500 | 2374 | 900 | 1000 |
+| Full | 0.898 ± 0.02 | 0.728 ± 0.02 | 0.520 ± 0.03 | 0.852 ± 0.02 |
+| K4 | 0.892 ± 0.02 | 0.762 ± 0.02 | 0.518 ± 0.03 | 0.860 ± 0.02 |
+| K2 | 0.890 ± 0.02 | 0.739 ± 0.02 | 0.523 ± 0.03 | 0.829 ± 0.02 |
+| Model card (27B) | 0.926 | — | 0.823 | 0.894 |
 
 ---
 
-# Inference
+### 📊 Perplexity Evaluation
+Perplexity (ctx 4096):
 
-Checkpoints are available on Hf🤗 : [FastKron Hugging Face Collection](https://huggingface.co/collections/timo13113/test-collection)
+| model | wikitext2 | c4 |
+| :--- | :--- | :--- |
+| bf16 | 6.720 | 8.809 |
+| 4-bit (k4) | 6.949 | 8.871 |
+| 2-bit (k2) | 8.390 | 9.969 |
+
+---
+
+### 📊 Common-Sense Reasoning
+Common-sense, 0-shot, without chat template (acc_norm; boolq — acc):
+
+| model | arc_c | arc_e | boolq | piqa | hellaswag | AVG |
+| :--- | :--- | :--- | :--- | :--- | :--- | :--- |
+| full | 0.613 | 0.796 | 0.767 | 0.823 | 0.834 | **0.767** |
+| 4-bit | 0.613 | 0.811 | 0.783 | 0.819 | 0.831 | **0.771** |
+| 2-bit | 0.619 | 0.827 | 0.739 | 0.814 | 0.793 | **0.758** |
+
+---
+
+### 📊 Reasoning & Instruction Performance
+Reasoning / instruction (`--no_thinking`, chat template, fewshot_as_multiturn; gsm8k 5-shot/512 tok, ifeval 0-shot/1280 tok):
+
+| task | full | 4-bit | 2-bit |
+| :--- | :--- | :--- | :--- |
+| gsm8k (strict) | **0.961** | **0.961** | 0.933 |
+| ifeval (prompt / inst strict) | 0.867 / 0.909 | 0.867 / 0.911 | 0.852 / 0.899 |
+
+
+## Results for released Qwen3.5-35B quantized models
+
+### 📊 Reasoning & Instruction Performance
+Qwen3.5-35B-A3B (`--no_thinking`, chat template, fewshot_as_multiturn; gsm8k 5-shot/512 tok, ifeval 0-shot/1280 tok)
+
+| task | full | mixed 2/4-bit | Δ |
+| :--- | :--- | :--- | :--- |
+| gsm8k (strict) | 0.891 | 0.868 | −2.27 |
+| ifeval (prompt / inst strict) | 0.850 / 0.897 | 0.861 / 0.905 | +1.11 / +0.84 |
+
+---
+
+### 📊 Perplexity Evaluation
+Qwen3.5-35B-A3B (MoE) — perplexity (ctx 4096), mixed: 4-bit non-experts / 2-bit experts:
+
+| model | wikitext2 | c4 |
+| :--- | :--- | :--- |
+| bf16 | 6.257 | 9.203 |
+| 2/4-bit | 7.002 | 9.863 |
+| Δ | +0.745 | +0.660 |
+
+
+## Inference
+
+When downloading from HF, you also need to pull the modelling.py file.
+
+📊 Speed — Qwen3.5-35B-A3B (decode, bs=1, A100, decode-only)markdown
+| mode | ms/tok | tok/s | memory |
+| :--- | :--- | :--- | :--- |
+| bf16 (uncompressed) | 82.1 | 12.18 | 70.5 GB |
+| mixed 2/4-bit, kernel eager | 423.8 | 2.36 | 12.5 GB |
+| mixed, kernel + CUDA-graph | 72.0 | 13.9 | 12.8 GB |
+| mixed, grouped GEMM + CUDA-graph | 43.5 | 23.0 | 13.0 GB |
+
 ## Installation process
+
 ### Essential libraries
 ```
 pip install -r requirements.txt
@@ -107,27 +180,11 @@ cd qtip
 pip install -e .
 ```
 
-### 1. Hessians with Sketch A (YAQA baseline)
+### 1. Hessians with FastKron
 
-To reproduce the baseline YAQA factors, run:
+FastKron Hessian estimator.
 
-```
-CUDA_VISIBLE_DEVICES=0,1,2,3 torchrun --standalone --nproc-per-node=4 \
-  hessian_llama/get_hess_llama.py \
-  --save_path <PATH_TO_SAVE> \
-  --orig_model unsloth/llama-2-7b \
-  --batch_size 6 \
-  --hessian_sketch A \
-  --power_iters 4 \
-  --ctx_size 4096 \
-  --n_seqs 4096
-```
-
-### 2. Hessians with FastKron
-
-FastKron replaces power-iteration with a Lanczos-based estimator.
-
-#### 2a. Collect calibration minibatches
+#### 1a. Collect calibration minibatches
 
 ```
 python kronfwsvd/collect_fisher_weights.py \
@@ -137,13 +194,13 @@ python kronfwsvd/collect_fisher_weights.py \
   --lr 1e-4
 ```
   
-#### 2b. Run FastKron factor estimation
+#### 1b. Run FastKron factor estimation
 ```
 python kronfwsvd/get_kron_factors_llama.py \
 --model_name <ORIG_MODEL_PATH> \
 ```
 
-#### 3. Quantization and Evaluation
+#### 2. Quantization and Evaluation
 
 Quantize the model with QTIP and evaluate downstream tasks:
 ```
@@ -194,7 +251,7 @@ zero-shot evaluation in sequence. Override the bitrate via `--K 2` or `--K 4`.
 | Qwen2.5-32B | 64 | 16 | 96 | 3096 |
 
 
-# Results for released 2.5 quantized models
+# Results for previously released Qwen 2.5 32B quantized model
 
 ## 📊 Zero-shot results — Qwen-2.5 32B PTQ no fine-tuning
 
