@@ -1,11 +1,18 @@
 # FastKron: Fast and Accurate Fisher-Guided Quantization
 
-This repository contains scripts for reproducing our experiments on **post-training quantization (PTQ)** of LLaMA and Qwen models using:
+This repository contains scripts and results for **post-training quantization (PTQ)** of Qwen3.5* models with linear attention layers.
 
--   **Sketch A** Hessian factors (baseline, from the YAQA framework), and
--   **FastKron** Hessian factors (our method).
+Checkpoints are available on Hf🤗 :
 
-We follow the YAQA pipeline with QTIP quantization and replace the Kronecker-factor estimation step with our accelerated method, **FastKron**.
+[qwen35-122b-a3b_2_4_bit (MOE)](https://huggingface.co/Sayankotor/qwen35-122b-a10b-k4e2)
+
+[qwen35-35b-a3b_2_4_bit (MOE)](https://huggingface.co/Sayankotor/qwen35-35b-a3b-FastKron-mixed)
+
+[qwen35-27b-a3b_2_bit](https://huggingface.co/Sayankotor/qwen35-27b-FastKron-2bit)
+
+[qwen35-27b-a3b_4_bit](https://huggingface.co/Sayankotor/qwen35-27b-FastKron-4bit)
+
+
 
 ---
 
@@ -16,6 +23,12 @@ Detailed methodology, implementation, and experimental results are presented in 
 > [Fast and Accurate Fisher-Guided Quantization via Efficient Kronecker Factor
 Approximation.], ACL'2026 Main
 > V. Chekalina, T.Gerasin. M.Kurkin, A.Kuznetsov, E.Frolov*
+
+---
+
+# Results for released 2.5 quantized models
+
+## 📊 Zero-shot results — 
 
 ---
 
@@ -181,7 +194,7 @@ zero-shot evaluation in sequence. Override the bitrate via `--K 2` or `--K 4`.
 | Qwen2.5-32B | 64 | 16 | 96 | 3096 |
 
 
-# Results for released quantized models
+# Results for released 2.5 quantized models
 
 ## 📊 Zero-shot results — Qwen-2.5 32B PTQ no fine-tuning
 
